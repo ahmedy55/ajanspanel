@@ -1,0 +1,75 @@
+name: CI — Ajans Paneli
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    name: Lint + Type Check + Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Security audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: false
+
+      - name: Build
+        run: npm run build
+        env:
+          # Build sırasında dummy değerler (gerçek key'ler Vercel'de)
+          PANEL_SUPABASE_URL: https://dummy.supabase.co
+          PANEL_SUPABASE_ANON_KEY: dummy_key
+          PANEL_SUPABASE_SERVICE_ROLE_KEY: dummy_service_key
+          NEXT_PUBLIC_PANEL_SUPABASE_URL: https://dummy.supabase.co
+          NEXT_PUBLIC_PANEL_SUPABASE_ANON_KEY: dummy_anon_key
+          AUDIPRO_SUPABASE_URL: https://dummy2.supabase.co
+          AUDIPRO_SUPABASE_SERVICE_ROLE_KEY: dummy_service_key_2
+          PRODUCT2_SUPABASE_URL: https://dummy3.supabase.co
+          PRODUCT2_SUPABASE_SERVICE_ROLE_KEY: dummy_service_key_3
+          PRODUCT3_SUPABASE_URL: https://dummy4.supabase.co
+          PRODUCT3_SUPABASE_SERVICE_ROLE_KEY: dummy_service_key_4
+
+  # Güvenlik taraması: service_role key'in client bundle'a sızmadığını kontrol et
+  security-check:
+    name: Security Check
+    runs-on: ubuntu-latest
+    needs: quality
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check no NEXT_PUBLIC_ service role keys
+        run: |
+          if grep -r "NEXT_PUBLIC_.*SERVICE_ROLE" src/; then
+            echo "❌ KRITIK: service_role key NEXT_PUBLIC_ olarak tanımlanmış!"
+            exit 1
+          fi
+          echo "✅ service_role key sızıntısı yok"
+
+      - name: Check no direct supabase admin in client components
+        run: |
+          if grep -r "createPanelAdminClient\|createProductAdminClient" src/app --include="*.tsx" | grep -v "route.ts"; then
+            echo "⚠️  Admin client referansı client component'te bulundu — kontrol edin"
+          else
+            echo "✅ Admin client sadece server route'larında"
+          fi
