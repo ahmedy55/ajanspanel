@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { checkRateLimit } from '@/lib/apiSecurity';
 import { createPanelAdminClient } from '@/lib/supabase/panel';
 
-const DEFAULT_PANEL_URL = 'https://rkhbflecouhdxylihbyq.supabase.co';
-const DEFAULT_PANEL_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJraGJmbGVjb3VoZHh5bGloYnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1Mjk0NjMsImV4cCI6MjEwNDEwNTQ2M30.ipr_CxpcpnbrC6dZLgqEg0l_178KXDuApihnUYpV8b0';
 
 export async function POST(request: NextRequest) {
+  const rateError = checkRateLimit(request, { maxRequests: 10 });
+  if (rateError) return rateError;
   try {
     let email = '';
     let password = '';
@@ -25,7 +26,9 @@ export async function POST(request: NextRequest) {
       if (next) nextPath = next;
     }
 
+    if (typeof email !== 'string' || typeof password !== 'string') return NextResponse.json({ error: 'Geçersiz giriş.' }, { status: 400 });
     email = email.trim();
+    if (typeof nextPath !== 'string' || !/^\/(?![\/\\])/.test(nextPath) || nextPath.includes('\\')) nextPath = '/organizations';
 
     if (!email || !password) {
       if (contentType.includes('application/json')) {
@@ -41,8 +44,8 @@ export async function POST(request: NextRequest) {
       : NextResponse.redirect(redirectUrl, { status: 303 });
 
     const supabase = createServerClient(
-      process.env.PANEL_SUPABASE_URL || DEFAULT_PANEL_URL,
-      process.env.PANEL_SUPABASE_ANON_KEY || DEFAULT_PANEL_ANON,
+      process.env.NEXT_PUBLIC_PANEL_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_PANEL_SUPABASE_ANON_KEY!,
       {
         cookies: {
           getAll() {
@@ -81,19 +84,8 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (!adminData) {
-      // Eğer platform_admins içinde henüz yoksa ve bu admin@ajans.com hesabıysa otomatik ekle
-      if (email === 'admin@ajans.com') {
-        await adminClient.from('platform_admins').upsert({ user_id: data.user.id });
-      } else {
-        await supabase.auth.signOut();
-        if (contentType.includes('application/json')) {
-          return NextResponse.json({
-            success: false,
-            error: 'Bu kullanıcının ajans paneline erişim yetkisi yok.',
-          }, { status: 403 });
-        }
-        return NextResponse.redirect(new URL('/login?error=unauthorized', request.url), { status: 303 });
-      }
+      await supabase.auth.signOut();
+      return NextResponse.json({ success: false, error: 'Bu kullanıcının ajans paneline erişim yetkisi yok.' }, { status: 403 });
     }
 
     return response;

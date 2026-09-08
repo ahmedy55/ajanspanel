@@ -1,6 +1,8 @@
 // src/app/(dashboard)/layout.tsx
 // Dashboard layout: Sidebar + main content area
 
+import { getAuthenticatedAdmin } from '@/lib/authAdmin';
+import { redirect } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import TopBar from '@/components/TopBar';
 import type { Metadata } from 'next';
@@ -9,7 +11,8 @@ export const metadata: Metadata = {
   title: { template: '%s | Ajans Paneli', default: 'Ajans Paneli' },
 };
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  if (!await getAuthenticatedAdmin()) redirect('/login');
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--surface-bg)' }}>
       <Sidebar />

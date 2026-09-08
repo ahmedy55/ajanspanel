@@ -1,8 +1,10 @@
+import 'server-only';
 // src/lib/rpc/organizations.ts
 // AudiPro organizasyon RPC sarmalayıcıları (tip-güvenli)
 // Tüm fonksiyonlar SADECE server-side API route'larından çağrılır.
 
-import { createProductAdminClient, ProductId } from '@/lib/supabase/products';
+import { createProductAdminClient } from '@/lib/supabase/productAdmin';
+import type { ProductId } from '@/lib/supabase/products';
 
 export interface OrgRow {
   id: string;
@@ -56,7 +58,7 @@ export async function adminListOrganizations(productId: ProductId): Promise<OrgR
     throw new Error(`Organizasyonlar alınamadı: ${tableErr.message}`);
   }
 
-  return (tableData || []).map((o: any) => ({
+  return (tableData || []).map((o) => ({
     id: o.id,
     name: o.name,
     slug: o.slug || o.name?.toLowerCase().replace(/\s+/g, '-'),
@@ -85,7 +87,7 @@ export async function adminUpdateLicense(
   const client = createProductAdminClient(productId);
   const { error } = await client.rpc('admin_update_license', {
     p_org_id: orgId,
-    p_plan_type: params.plan_type,
+    p_plan_type: params.plan_type === 'free' ? 'trial' : params.plan_type,
     p_subscription_status: params.subscription_status,
     p_max_users: params.max_users,
     p_max_branches: params.max_branches,
@@ -116,6 +118,7 @@ export async function adminListOrgUsers(
 }
 
 export interface CreatedOrgResult {
+  warning?: string;
   org: OrgRow;
   adminCredentials?: {
     email: string;
@@ -137,97 +140,33 @@ export async function adminCreateOrganization(
   }
 ): Promise<CreatedOrgResult> {
   const client = createProductAdminClient(productId);
-  let slug = params.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-
-  if (!slug) slug = 'org-' + Date.now();
-
-  // AudiPro DB'de plan_type IN ('trial', 'basic', 'pro', 'enterprise')
-  const validPlanType = params.plan_type === 'free' ? 'trial' : params.plan_type;
-
-  // AudiPro DB'de subscription_status IN ('active', 'suspended', 'cancelled')
-  const insertPayload = {
-    name: params.name,
-    slug,
-    plan_type: validPlanType,
-    subscription_status: 'active',
-    max_users: params.max_users,
-    max_branches: params.max_branches,
-  };
-
-  const { data: orgData, error: orgError } = await client
-    .from('organizations')
-    .insert([insertPayload])
-    .select()
-    .single();
-
-  if (orgError || !orgData) throw new Error(`Organizasyon oluşturulamadı: ${orgError?.message}`);
-
-  const org = orgData as OrgRow;
-  let adminCredentials: { email: string; userId: string; branchId: string } | undefined;
-
-  // Eğer adminEmail sağlandıysa ilk şubeyi ve admin kullanıcısını aç
-  if (params.adminEmail && params.adminPassword) {
-    try {
-      // 1. İlk şube (Merkez Şube) oluştur
-      const { data: branchData, error: branchErr } = await client
-        .from('branches')
-        .insert([{
-          organization_id: org.id,
-          name: 'Merkez Şube',
-          status: 'active',
-        }])
-        .select()
-        .single();
-
-      const branchId = branchData?.id;
-
-      // 2. AudiPro Auth kullanıcısını oluştur (app_metadata içine organization_id vererek doğrudan o firmaya bağla)
-      const { data: userData, error: userErr } = await client.auth.admin.createUser({
-        email: params.adminEmail.trim(),
-        password: params.adminPassword,
-        email_confirm: true,
-        app_metadata: {
-          organization_id: org.id,
-        },
-      });
-
-      if (userErr || !userData.user) {
-        console.error('Kullanıcı auth hesabı oluşturulamadı:', userErr);
-      } else {
-        const userId = userData.user.id;
-
-        // 3. Profiles tablosuna ekle
-        await client.from('profiles').upsert({
-          id: userId,
-          first_name: params.name,
-          last_name: 'Yöneticisi',
-        });
-
-        // 4. Memberships tablosuna bağla
-        await client.from('memberships').insert([{
-          user_id: userId,
-          organization_id: org.id,
-          roles: ['Firma Yöneticisi'],
-          branch_id: branchId,
-          status: 'active',
-          email: params.adminEmail.trim(),
-          first_name: params.name,
-          last_name: 'Yöneticisi',
-        }]);
-
-        adminCredentials = {
-          email: params.adminEmail.trim(),
-          userId,
-          branchId: branchId || '',
-        };
-      }
-    } catch (createErr) {
-      console.error('Admin hesabı veya şube oluşturulurken hata:', createErr);
+  if (!params.adminEmail || !params.adminPassword) throw new Error('İlk firma yöneticisi zorunludur.');
+  const { data, error } = await client.auth.admin.createUser({
+    email: params.adminEmail.trim().toLowerCase(), password: params.adminPassword, email_confirm: true,
+  });
+  if (error || !data.user) throw new Error('Yönetici hesabı oluşturulamadı.');
+  const userId = data.user.id;
+  const { data: created, error: provisionError } = await client.rpc('admin_create_organization', {
+    p_name: params.name, p_plan_type: params.plan_type === 'free' ? 'trial' : params.plan_type,
+    p_max_users: params.max_users, p_max_branches: params.max_branches,
+    p_user_id: userId, p_email: params.adminEmail.trim().toLowerCase(),
+  });
+  if (provisionError || !created) {
+    // Transport errors may arrive after a COMMIT. Never delete the Auth user in that case.
+    if (!provisionError?.code || !/^(22|23|P0)/.test(provisionError.code)) {
+      throw new Error('Firma oluşturma sonucu belirsiz; yeniden denemeden üyelik ve Auth hesabını kontrol edin: '+userId);
     }
+    const { error: cleanupError } = await client.auth.admin.deleteUser(userId);
+    if (cleanupError) throw new Error('Firma oluşturulamadı; sahipsiz Auth hesabı için yönetici temizliği gerekiyor: ' + userId);
+    throw new Error('Firma oluşturulamadı; veritabanı işlemi geri alındı.');
   }
-
-  return { org, adminCredentials };
+  // Metadata is a context hint. RLS always checks the live membership.
+  const { error: metadataError } = await client.auth.admin.updateUserById(userId, {
+    app_metadata: { organization_id: created.org.id, branch_id: created.branch_id, roles: ['Firma Yöneticisi'] },
+  });
+  if (metadataError) {
+    // Provisioning committed: do not delete its user or invite the caller to retry creation.
+    return { org: created.org, adminCredentials: { email: params.adminEmail, userId, branchId: created.branch_id }, warning: 'Firma oluşturuldu. Kullanıcı girişte firma seçmelidir.' };
+  }
+  return { org: created.org, adminCredentials: { email: params.adminEmail, userId, branchId: created.branch_id } };
 }

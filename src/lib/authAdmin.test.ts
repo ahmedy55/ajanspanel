@@ -1,0 +1,10 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+const m=vi.hoisted(()=>({getUser:vi.fn(),aal:vi.fn(),from:vi.fn()}));
+vi.mock('@/lib/supabase/panel',()=>({createPanelClient:async()=>({auth:{getUser:m.getUser,mfa:{getAuthenticatorAssuranceLevel:m.aal}}}),createPanelAdminClient:()=>({from:m.from})}));
+import {getAuthenticatedAdmin} from './authAdmin';
+beforeEach(()=>{vi.clearAllMocks();m.getUser.mockResolvedValue({data:{user:{id:'u',email:'admin@ajans.com'}},error:null});m.aal.mockResolvedValue({data:{nextLevel:'aal1',currentLevel:'aal1'},error:null});m.from.mockReturnValue({select:()=>({eq:()=>({maybeSingle:async()=>({data:{user_id:'u'},error:null})})})});});
+it('valid admin is authenticated',async()=>{expect(await getAuthenticatedAdmin()).toMatchObject({id:'u'});});
+it('rejects invalid session before service role use',async()=>{m.getUser.mockResolvedValue({data:{user:null},error:{message:'invalid'}});expect(await getAuthenticatedAdmin()).toBeNull();expect(m.from).not.toHaveBeenCalled();});
+it('email does not bootstrap superadmin',async()=>{m.from.mockReturnValue({select:()=>({eq:()=>({maybeSingle:async()=>({data:null,error:null})})})});expect(await getAuthenticatedAdmin()).toBeNull();});
+it('enforces enrolled MFA in API authorization',async()=>{m.aal.mockResolvedValue({data:{nextLevel:'aal2',currentLevel:'aal1'},error:null});expect(await getAuthenticatedAdmin()).toBeNull();expect(m.from).not.toHaveBeenCalled();});
+it('fails closed when assurance check fails',async()=>{m.aal.mockResolvedValue({data:null,error:{message:'unavailable'}});expect(await getAuthenticatedAdmin()).toBeNull();});

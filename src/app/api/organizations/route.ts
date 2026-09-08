@@ -5,7 +5,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit, validateBody, CreateOrgSchema } from '@/lib/apiSecurity';
 import { adminListOrganizations, adminCreateOrganization } from '@/lib/rpc/organizations';
-import { createPanelClient } from '@/lib/supabase/panel';
 import { logAdminAction } from '@/lib/audit';
 import type { ProductId } from '@/lib/supabase/products';
 
@@ -20,6 +19,7 @@ export async function GET(request: NextRequest) {
 
   const productId = request.nextUrl.searchParams.get('productId') as ProductId ?? 'audipro';
 
+  if (!['audipro','product2','product3'].includes(productId)) return NextResponse.json({error:'Geçersiz ürün.'},{status:400});
   try {
     const organizations = await adminListOrganizations(productId);
 
@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
       success: true,
       organization: result.org,
       adminCredentials: result.adminCredentials,
+      warning: result.warning,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Sunucu hatası';

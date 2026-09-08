@@ -56,9 +56,7 @@ export default function LicensesPage() {
     }
   }, [productId]);
 
-  useEffect(() => {
-    fetchOrgs();
-  }, [fetchOrgs]);
+  useEffect(() => { const task=setTimeout(()=>{void fetchOrgs();},0); return ()=>clearTimeout(task); }, [fetchOrgs]);
 
   function openEditModal(org: OrgRow) {
     setEditOrg(org);

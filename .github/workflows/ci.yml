@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -33,6 +33,9 @@ jobs:
       - name: Security audit
         run: npm audit --audit-level=moderate
         continue-on-error: false
+
+      - name: Unit tests
+        run: npm test
 
       - name: Build
         run: npm run build

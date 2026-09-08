@@ -18,7 +18,7 @@ RETURNS TABLE(
   max_branches         int,
   created_at           timestamptz
 )
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 BEGIN
   -- Sadece bu kolonları döner. Hasta verileri, finansal veriler vb. tablolara hiç dokunmaz.
   RETURN QUERY
@@ -47,7 +47,7 @@ CREATE OR REPLACE FUNCTION admin_update_license(
   p_max_branches        int
 )
 RETURNS void
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 BEGIN
   -- Sadece lisans bilgilerini günceller.
   -- Firma adı, slug, hasta verileri gibi alanlara dokunmaz.
@@ -77,13 +77,13 @@ RETURNS TABLE(
   branch_count               bigint,
   appointment_count_last30   bigint
 )
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 BEGIN
   RETURN QUERY
   SELECT
     (SELECT COUNT(*) FROM patients      WHERE organization_id = p_org_id)::bigint,
     (SELECT COUNT(*) FROM memberships   WHERE organization_id = p_org_id AND status = 'active')::bigint,
-    (SELECT COUNT(*) FROM branches      WHERE organization_id = p_org_id AND is_active = true)::bigint,
+    (SELECT COUNT(*) FROM branches      WHERE organization_id = p_org_id AND status = 'active')::bigint,
     (SELECT COUNT(*) FROM appointments
       WHERE organization_id = p_org_id
         AND created_at >= NOW() - INTERVAL '30 days')::bigint;
@@ -103,7 +103,7 @@ RETURNS TABLE(
   status     text,
   joined_at  timestamptz
 )
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 BEGIN
   RETURN QUERY
     SELECT
@@ -135,3 +135,21 @@ GRANT EXECUTE ON FUNCTION admin_list_organizations()              TO service_rol
 GRANT EXECUTE ON FUNCTION admin_update_license(uuid,text,text,int,int) TO service_role;
 GRANT EXECUTE ON FUNCTION admin_get_org_stats(uuid)               TO service_role;
 GRANT EXECUTE ON FUNCTION admin_list_org_users(uuid)              TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_create_organization(p_name text,p_plan_type text,p_max_users int,p_max_branches int,p_user_id uuid,p_email text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+DECLARE o public.organizations; b uuid; BEGIN
+ IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'Service role required'; END IF;
+ IF length(trim(p_name))<2 OR p_max_users<1 OR p_max_branches<1 THEN RAISE EXCEPTION 'Invalid provisioning parameters'; END IF;
+ IF EXISTS(SELECT 1 FROM public.memberships WHERE user_id=p_user_id) THEN RAISE EXCEPTION 'User already provisioned'; END IF;
+ INSERT INTO public.organizations(name,slug,plan_type,subscription_status,max_users,max_branches)
+ VALUES(trim(p_name),'org-'||gen_random_uuid()::text,p_plan_type,'active',p_max_users,p_max_branches) RETURNING * INTO o;
+ INSERT INTO public.branches(organization_id,name,status) VALUES(o.id,'Merkez Şube','active') RETURNING id INTO b;
+ INSERT INTO public.profiles(id,first_name,last_name) VALUES(p_user_id,p_name,'Yöneticisi') ON CONFLICT(id) DO NOTHING;
+ INSERT INTO public.memberships(user_id,organization_id,branch_id,roles,status,email,first_name,last_name)
+ VALUES(p_user_id,o.id,b,ARRAY['Firma Yöneticisi'],'active',p_email,p_name,'Yöneticisi');
+ RETURN jsonb_build_object('org',to_jsonb(o),'branch_id',b);
+END $$;
+REVOKE ALL ON FUNCTION public.admin_create_organization(text,text,int,int,uuid,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_create_organization(text,text,int,int,uuid,text) TO service_role;
+REVOKE ALL ON FUNCTION admin_list_organizations(),admin_update_license(uuid,text,text,int,int),admin_get_org_stats(uuid),admin_list_org_users(uuid) FROM anon,authenticated;

@@ -41,9 +41,7 @@ export default function UsersPage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchAdmins();
-  }, [fetchAdmins]);
+  useEffect(() => { const task=setTimeout(()=>{void fetchAdmins();},0); return ()=>clearTimeout(task); }, [fetchAdmins]);
 
   async function handleAddAdmin(e: React.FormEvent) {
     e.preventDefault();

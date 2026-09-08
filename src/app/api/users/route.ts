@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedAdmin } from '@/lib/authAdmin';
 import { createPanelAdminClient } from '@/lib/supabase/panel';
+import { checkRateLimit } from '@/lib/apiSecurity';
 import type { User } from '@supabase/supabase-js';
 
 // GET: platform_admins listesi ve kullanıcı detayları
@@ -46,12 +47,13 @@ export async function GET() {
 
 // POST: Yeni platform admini davet et / ekle
 export async function POST(request: NextRequest) {
+  const limited=checkRateLimit(request,{maxRequests:5}); if(limited) return limited;
   const admin = await getAuthenticatedAdmin();
   if (!admin) return NextResponse.json({ success: false, error: 'Yetkisiz erişim.' }, { status: 401 });
 
   try {
     const { email, password } = await request.json();
-    if (!email) {
+    if (typeof email!=='string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length>254 || (password && (typeof password!=='string' || password.length>128))) {
       return NextResponse.json({ success: false, error: 'E-posta zorunludur.' }, { status: 400 });
     }
 
@@ -65,8 +67,8 @@ export async function POST(request: NextRequest) {
     if (existing) {
       userId = existing.id;
     } else {
-      if (!password || password.length < 8) {
-        return NextResponse.json({ success: false, error: 'Yeni kullanıcı için en az 8 karakterli şifre gereklidir.' }, { status: 400 });
+      if (!password || password.length < 12) {
+        return NextResponse.json({ success: false, error: 'Yeni kullanıcı için en az 12 karakterli şifre gereklidir.' }, { status: 400 });
       }
       const { data: newUser, error: createErr } = await adminClient.auth.admin.createUser({
         email: email.trim(),
@@ -97,6 +99,7 @@ export async function POST(request: NextRequest) {
 
 // DELETE: Platform admin yetkisini kaldır
 export async function DELETE(request: NextRequest) {
+  const limited=checkRateLimit(request,{maxRequests:5}); if(limited) return limited;
   const admin = await getAuthenticatedAdmin();
   if (!admin) return NextResponse.json({ success: false, error: 'Yetkisiz erişim.' }, { status: 401 });
 

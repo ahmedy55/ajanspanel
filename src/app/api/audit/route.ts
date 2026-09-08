@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const limit  = Math.min(parseInt(params.get('limit')  ?? '50'),  200);
   const offset = parseInt(params.get('offset') ?? '0');
+  if (!Number.isInteger(limit) || limit<1 || !Number.isInteger(offset) || offset<0) return NextResponse.json({error:'Geçersiz sayfalama.'},{status:400});
 
   try {
     const adminClient = createPanelAdminClient();

@@ -8,8 +8,6 @@ import { createServerClient } from '@supabase/ssr';
 
 const PUBLIC_PATHS = ['/login', '/login/mfa', '/api/auth'];
 
-const DEFAULT_PANEL_URL = 'https://rkhbflecouhdxylihbyq.supabase.co';
-const DEFAULT_PANEL_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJraGJmbGVjb3VoZHh5bGloYnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1Mjk0NjMsImV4cCI6MjEwNDEwNTQ2M30.ipr_CxpcpnbrC6dZLgqEg0l_178KXDuApihnUYpV8b0';
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -22,8 +20,8 @@ export async function proxy(request: NextRequest) {
   const response = NextResponse.next();
 
   const supabase = createServerClient(
-    process.env.PANEL_SUPABASE_URL || DEFAULT_PANEL_URL,
-    process.env.PANEL_SUPABASE_ANON_KEY || DEFAULT_PANEL_ANON,
+    process.env.NEXT_PUBLIC_PANEL_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_PANEL_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll()    { return request.cookies.getAll(); },
@@ -37,16 +35,16 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  if (!session) {
+  if (error || !user) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('next', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   // Session max-age kontrolü: 2 saat
-  const sessionAge = Date.now() - new Date(session.user.last_sign_in_at ?? 0).getTime();
+  const sessionAge = Date.now() - new Date(user.last_sign_in_at ?? 0).getTime();
   const TWO_HOURS  = 2 * 60 * 60 * 1000;
   if (sessionAge > TWO_HOURS) {
     await supabase.auth.signOut();
@@ -64,7 +62,7 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
-export const proxyConfig = {
+export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],

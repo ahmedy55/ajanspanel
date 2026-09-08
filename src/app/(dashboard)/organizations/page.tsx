@@ -71,7 +71,7 @@ export default function OrganizationsPage() {
     }
   }, [productId]);
 
-  useEffect(() => { fetchOrgs(); }, [fetchOrgs]);
+  useEffect(() => { const task=setTimeout(()=>{void fetchOrgs();},0); return ()=>clearTimeout(task); }, [fetchOrgs]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();

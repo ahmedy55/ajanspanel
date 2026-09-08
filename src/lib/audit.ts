@@ -16,7 +16,7 @@ export interface AuditActionParams {
 export async function logAdminAction(params: AuditActionParams): Promise<void> {
   try {
     const client = createPanelAdminClient();
-    await client.from('admin_audit_log').insert([{
+    const { error } = await client.from('admin_audit_log').insert([{
       admin_user_id: params.adminUserId,
       action:         params.action,
       target_org_id:  params.targetOrgId ?? null,
@@ -26,6 +26,7 @@ export async function logAdminAction(params: AuditActionParams): Promise<void> {
       metadata:       params.metadata ?? {},
       created_at:     new Date().toISOString(),
     }]);
+    if(error) console.error('[audit] Insert failed',error.code);
     // Silently fails — audit log hatası asla kullanıcıya yansımamalı
   } catch {
     console.error('[audit] Log yazılamadı');

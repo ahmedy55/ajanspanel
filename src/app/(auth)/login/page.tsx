@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [nextPath, setNextPath] = useState('/organizations');
 
   useEffect(() => {
+    const task=setTimeout(()=>{
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const err = params.get('error');
@@ -20,6 +21,8 @@ export default function LoginPage() {
 
       setNextPath(params.get('next') ?? '/organizations');
     }
+    },0);
+    return ()=>clearTimeout(task);
   }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {

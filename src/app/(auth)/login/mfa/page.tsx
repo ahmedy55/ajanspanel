@@ -1,18 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
-const DEFAULT_PANEL_URL = 'https://rkhbflecouhdxylihbyq.supabase.co';
-const DEFAULT_PANEL_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJraGJmbGVjb3VoZHh5bGloYnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1Mjk0NjMsImV4cCI6MjEwNDEwNTQ2M30.ipr_CxpcpnbrC6dZLgqEg0l_178KXDuApihnUYpV8b0';
-
-function getSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_PANEL_SUPABASE_URL || DEFAULT_PANEL_URL,
-    process.env.NEXT_PUBLIC_PANEL_SUPABASE_ANON_KEY || DEFAULT_PANEL_ANON
-  );
-}
 
 export default function MfaPage() {
   const router = useRouter();
@@ -25,7 +16,7 @@ export default function MfaPage() {
     setError('');
     setLoading(true);
 
-    const supabase = getSupabaseClient();
+    const supabase = createClient();
 
     try {
       const { data: factorsData } = await supabase.auth.mfa.listFactors();
@@ -63,7 +54,7 @@ export default function MfaPage() {
   }
 
   async function handleSignOut() {
-    const supabase = getSupabaseClient();
+    const supabase = createClient();
     await supabase.auth.signOut();
     router.push('/login');
   }

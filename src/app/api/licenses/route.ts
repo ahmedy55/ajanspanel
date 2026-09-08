@@ -4,7 +4,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit, validateBody, UpdateLicenseSchema } from '@/lib/apiSecurity';
 import { adminUpdateLicense } from '@/lib/rpc/organizations';
-import { createPanelClient } from '@/lib/supabase/panel';
 import { logAdminAction, checkAnomalyAndAlert } from '@/lib/audit';
 
 import { getAuthenticatedAdmin } from '@/lib/authAdmin';

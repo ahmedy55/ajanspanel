@@ -17,6 +17,10 @@ export interface RateLimitOptions {
 }
 
 export function checkRateLimit(request: NextRequest, options: RateLimitOptions = {}): NextResponse | null {
+  if (!['GET','HEAD','OPTIONS'].includes(request.method)) {
+    const origin=request.headers.get('origin');
+    if ((origin && origin!==request.nextUrl.origin) || request.headers.get('sec-fetch-site')==='cross-site') return NextResponse.json({error:'Geçersiz istek kaynağı.'},{status:403});
+  }
   const windowMs    = options.windowMs    ?? 60_000;
   const maxRequests = options.maxRequests ?? 20;
 
@@ -91,8 +95,8 @@ export const CreateOrgSchema = z.object({
   plan_type:     z.enum(['trial', 'free', 'basic', 'pro', 'enterprise']),
   max_users:     z.number().int().min(1).max(1000),
   max_branches:  z.number().int().min(1).max(100),
-  adminEmail:    z.string().email().optional().or(z.literal('')),
-  adminPassword: z.string().min(6).optional().or(z.literal('')),
+  adminEmail:    z.string().trim().email(),
+  adminPassword: z.string().min(12).max(128),
 });
 
 export type UpdateLicenseInput = z.infer<typeof UpdateLicenseSchema>;
